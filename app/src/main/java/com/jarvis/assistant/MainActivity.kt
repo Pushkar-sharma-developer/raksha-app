@@ -23,7 +23,9 @@ class MainActivity : AppCompatActivity() {
 
     private val permissionsNeeded = mutableListOf(
         Manifest.permission.RECORD_AUDIO,
-        Manifest.permission.INTERNET
+        Manifest.permission.INTERNET,
+        Manifest.permission.CALL_PHONE,
+        Manifest.permission.READ_CONTACTS
     ).apply {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             add(Manifest.permission.READ_MEDIA_IMAGES)
