@@ -48,9 +48,8 @@ class WakeWordService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        tts = TTSHelper(this) {
-            tts.speak("Raksha online hai, boss.")
-        }
+         tts = TTSHelper(this)
+        tts.speak("Raksha online hai, boss.")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
