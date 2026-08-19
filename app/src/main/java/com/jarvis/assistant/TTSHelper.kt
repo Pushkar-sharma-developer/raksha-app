@@ -1,60 +1,82 @@
 package com.jarvis.assistant
 
 import android.content.Context
-import android.speech.tts.TextToSpeech
-import android.speech.tts.Voice
-import android.speech.tts.UtteranceProgressListener
-import java.util.Locale
+import android.media.MediaPlayer
+import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
-/**
- * Wraps Android's TextToSpeech and tries to pick a female-sounding voice
- * so Raksha's replies sound consistent every time.
- */
-class TTSHelper(context: Context, private val onReady: () -> Unit = {}) {
+class TTSHelper(private val context: Context, onReady: () -> Unit = {}) {
 
-    private var tts: TextToSpeech? = null
-    private var isReady = false
-
-    init {
-        tts = TextToSpeech(context) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                tts?.language = Locale("hi", "IN") // Hindi/Hinglish friendly
-                selectFemaleVoice()
-                isReady = true
-                onReady()
-            }
-        }
+    companion object {
+        private const val API_KEY = "sk-fish-vbs2VPGM498QHEU3OjExsVbWoaAFTZmU2IqAbebTZHA"
+        private const val VOICE_ID = "eb328c330fd74cc88932b78494c3b187"
+        private const val API_URL = "https://api.fish.audio/v1/tts"
     }
 
-    private fun selectFemaleVoice() {
-        val engine = tts ?: return
-        val voices: Set<Voice>? = engine.voices
-        val femaleVoice = voices?.firstOrNull {
-            it.name.contains("female", ignoreCase = true) &&
-                !it.isNetworkConnectionRequired
-        } ?: voices?.firstOrNull { it.name.contains("female", ignoreCase = true) }
+    private var mediaPlayer: MediaPlayer? = null
 
-        if (femaleVoice != null) {
-            engine.voice = femaleVoice
-        }
+    init {
+        onReady()
     }
 
     fun speak(text: String, onDone: (() -> Unit)? = null) {
-        if (!isReady) return
-        val utteranceId = "raksha_${System.currentTimeMillis()}"
-        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {}
-            override fun onDone(utteranceId: String?) {
+        Thread {
+            try {
+                val url = URL(API_URL)
+                val connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Authorization", "Bearer $API_KEY")
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.doOutput = true
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+
+                val body = JSONObject().apply {
+                    put("text", text)
+                    put("reference_id", VOICE_ID)
+                    put("format", "mp3")
+                }
+
+                connection.outputStream.use { it.write(body.toString().toByteArray()) }
+
+                if (connection.responseCode == 200) {
+                    val tempFile = File(context.cacheDir, "raksha_${System.currentTimeMillis()}.mp3")
+                    connection.inputStream.use { input ->
+                        FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+                    }
+                    playAudio(tempFile, onDone)
+                } else {
+                    onDone?.invoke()
+                }
+            } catch (e: Exception) {
                 onDone?.invoke()
             }
-            @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) {}
-        })
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        }.start()
+    }
+
+    private fun playAudio(file: File, onDone: (() -> Unit)?) {
+        mediaPlayer?.release()
+        mediaPlayer = MediaPlayer().apply {
+            setDataSource(file.absolutePath)
+            setOnCompletionListener {
+                it.release()
+                file.delete()
+                onDone?.invoke()
+            }
+            setOnErrorListener { mp, _, _ ->
+                mp.release()
+                onDone?.invoke()
+                true
+            }
+            prepare()
+            start()
+        }
     }
 
     fun shutdown() {
-        tts?.stop()
-        tts?.shutdown()
+        mediaPlayer?.release()
     }
 }
