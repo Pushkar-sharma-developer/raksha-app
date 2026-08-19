@@ -1,27 +1,24 @@
 package com.jarvis.assistant
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Patterns
+import androidx.core.content.ContextCompat
 
-/**
- * Turns Raksha's transcribed command text into an actual action.
- * Keyword-based for now — extend patterns here as you add more skills.
- */
 class CommandProcessor(private val context: Context, private val tts: TTSHelper) {
 
     fun process(spokenText: String) {
         val text = spokenText.lowercase().trim()
 
         when {
-            // "open <website>" / "<website> khol do"
             text.startsWith("open ") || text.contains("website") -> {
                 val target = text.removePrefix("open ").trim()
                 openWebsite(target)
             }
 
-            // "download <url>"
             text.startsWith("download ") -> {
                 val urlCandidate = extractUrl(text)
                 if (urlCandidate != null) {
@@ -31,14 +28,28 @@ class CommandProcessor(private val context: Context, private val tts: TTSHelper)
                 }
             }
 
-            // "search file <name>" / "find file <name>"
             text.startsWith("search file ") || text.startsWith("find file ") -> {
                 val query = text.substringAfter("file ").trim()
                 searchFile(query)
             }
 
+            text.startsWith("call ") -> {
+                val name = text.removePrefix("call ").trim()
+                callContact(name)
+            }
+
+            text.startsWith("message ") || text.startsWith("whatsapp ") -> {
+                val withoutCmd = text.substringAfter(" ").trim()
+                val parts = withoutCmd.split(" ", limit = 2)
+                if (parts.size == 2) {
+                    sendWhatsAppMessage(parts[0], parts[1])
+                } else {
+                    tts.speak("Boss, naam aur message dono boliye — jaise 'message Rahul kaise ho'")
+                }
+            }
+
             else -> {
-                tts.speak("Samajh nahi paayi boss. 'Open', 'search file', ya 'download' bol kar try kijiye.")
+                tts.speak("Samajh nahi paayi boss. 'Open', 'search file', 'download', 'call', ya 'message' bol kar try kijiye.")
             }
         }
     }
@@ -79,6 +90,58 @@ class CommandProcessor(private val context: Context, private val tts: TTSHelper)
             tts.speak("'$query' naam ki koi file nahi mili, boss.")
         } else {
             tts.speak("Boss, ${results.size} file mili hain. Pehli hai ${results.first().name}")
+        }
+    }
+
+    private fun callContact(name: String) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            tts.speak("Boss, mujhe Contacts ki permission nahi mili hai.")
+            return
+        }
+        val number = ContactHelper.findPhoneNumber(context, name)
+        if (number == null) {
+            tts.speak("Boss, '$name' naam ka contact nahi mila.")
+            return
+        }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            tts.speak("Boss, mujhe call karne ki permission nahi mili hai.")
+            return
+        }
+        val intent = Intent(Intent.ACTION_CALL).apply {
+            data = Uri.parse("tel:$number")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+        tts.speak("$name ko call kar rahi hoon, boss.")
+    }
+
+    private fun sendWhatsAppMessage(name: String, message: String) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            tts.speak("Boss, mujhe Contacts ki permission nahi mili hai.")
+            return
+        }
+        val number = ContactHelper.findPhoneNumber(context, name)
+        if (number == null) {
+            tts.speak("Boss, '$name' naam ka contact nahi mila.")
+            return
+        }
+        val cleanNumber = number.replace(Regex("[^0-9+]"), "")
+        val encodedMsg = Uri.encode(message)
+        val url = "https://wa.me/$cleanNumber?text=$encodedMsg"
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            context.startActivity(intent)
+            tts.speak("$name ke liye message taiyar kar diya, boss — bas Send dabana hoga.")
+        } catch (e: Exception) {
+            tts.speak("WhatsApp nahi khul paaya, boss.")
         }
     }
 }
