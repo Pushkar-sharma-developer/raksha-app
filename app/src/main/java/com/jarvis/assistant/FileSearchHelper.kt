@@ -42,6 +42,9 @@ object FileSearchHelper {
     }
 
     fun hasFullAccess(): Boolean {
-        return Environment.isExternalStorageManager()
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            true
+        }
     }
-}
