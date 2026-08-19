@@ -10,9 +10,10 @@ import android.provider.Settings
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
@@ -62,6 +63,23 @@ class MainActivity : AppCompatActivity() {
         }
 
         updateUi()
+        showCrashLogIfAny()
+    }
+
+    private fun showCrashLogIfAny() {
+        val logFile = File(filesDir, "crash_log.txt")
+        if (logFile.exists()) {
+            val content = logFile.readText()
+            AlertDialog.Builder(this)
+                .setTitle("Pichhli baar crash hua tha")
+                .setMessage(content)
+                .setPositiveButton("OK") { dialog, _ ->
+                    logFile.delete()
+                    dialog.dismiss()
+                }
+                .setCancelable(false)
+                .show()
+        }
     }
 
     private fun startRaksha() {
