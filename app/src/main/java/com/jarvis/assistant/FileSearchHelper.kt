@@ -30,7 +30,6 @@ object FileSearchHelper {
 
         for (file in files) {
             if (results.size >= maxResults) return
-            // Skip Android's protected/system dirs to avoid permission errors
             if (file.name == "Android" || file.isHidden) continue
 
             if (file.isDirectory) {
@@ -48,3 +47,4 @@ object FileSearchHelper {
             true
         }
     }
+}
