@@ -6,89 +6,97 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.os.Build
+import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.util.Log
 import androidx.core.app.NotificationCompat
-import ai.picovoice.porcupine.Porcupine
-import ai.picovoice.porcupine.PorcupineManager
-import ai.picovoice.porcupine.PorcupineManagerCallback
 
-/**
- * Runs continuously in the background listening only for the "Raksha"
- * wake word (via Porcupine — cheap on battery, doesn't send audio
- * anywhere). Once triggered, it opens the mic briefly to capture the
- * actual command and hands it to CommandProcessor.
- *
- * SETUP REQUIRED before this will run (see README.md):
- *  1. Free Picovoice account -> get an Access Key
- *  2. Train a custom wake word "Raksha" on console.picovoice.ai -> download the .ppn file
- *  3. Drop the .ppn file into app/src/main/assets/raksha.ppn
- *  4. Paste your Access Key below
- */
 class WakeWordService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "raksha_channel"
         private const val NOTIFICATION_ID = 1
-
-        // TODO: paste your free Picovoice Access Key here (console.picovoice.ai)
-        private const val PICOVOICE_ACCESS_KEY = "YOUR_PICOVOICE_ACCESS_KEY"
-
-        // Must match the filename you place in app/src/main/assets/
-        private const val WAKE_WORD_FILE = "raksha.ppn"
+        private const val WAKE_WORD = "raksha"
     }
 
-    private var porcupineManager: PorcupineManager? = null
     private lateinit var tts: TTSHelper
     private var speechRecognizer: SpeechRecognizer? = null
+    private val handler = Handler(Looper.getMainLooper())
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-         tts = TTSHelper(this)
-        tts.speak("Raksha online hai, boss.")
+        tts = TTSHelper(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification("Raksha sun rahi hai..."))
-        startWakeWordListening()
+        startListeningCycle()
         return START_STICKY
     }
 
-    private fun startWakeWordListening() {
-        try {
-            val callback = PorcupineManagerCallback { keywordIndex ->
-                if (keywordIndex == 0) {
-                    onWakeWordDetected()
+    private fun startListeningCycle() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            updateNotification("Is phone par speech recognition available nahi hai")
+            return
+        }
+
+        speechRecognizer?.destroy()
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+
+        val recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+        }
+
+        speechRecognizer?.setRecognitionListener(object : RecognitionListener {
+            override fun onResults(results: Bundle?) {
+                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                val heard = matches?.firstOrNull()?.lowercase() ?: ""
+
+                if (heard.contains(WAKE_WORD)) {
+                    handleWakeWordDetected(heard)
+                } else {
+                    restartListening()
                 }
             }
 
-            porcupineManager = PorcupineManager.Builder()
-                .setAccessKey(PICOVOICE_ACCESS_KEY)
-                .setKeywordPath("$WAKE_WORD_FILE") // loaded from assets
-                .setSensitivity(0.6f)
-                .build(applicationContext, callback)
+            override fun onError(error: Int) {
+                restartListening()
+            }
 
-            porcupineManager?.start()
-        } catch (e: Exception) {
-            Log.e("Raksha", "Wake word engine failed to start: ${e.message}")
-            updateNotification("Setup adhoora hai — README dekho (Access Key / raksha.ppn missing)")
-        }
+            override fun onReadyForSpeech(params: Bundle?) {}
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() {}
+            override fun onPartialResults(partialResults: Bundle?) {}
+            override fun onEvent(eventType: Int, params: Bundle?) {}
+        })
+
+        speechRecognizer?.startListening(recognizerIntent)
     }
 
-    private fun onWakeWordDetected() {
-        // Pause wake-word listening while we capture the actual command
-        porcupineManager?.stop()
+    private fun handleWakeWordDetected(heardText: String) {
         updateNotification("Sun rahi hoon...")
-        tts.speak("Yes boss, bataiye") {
-            listenForCommand()
+        val afterWakeWord = heardText.substringAfter(WAKE_WORD).trim()
+
+        if (afterWakeWord.isNotEmpty()) {
+            CommandProcessor(applicationContext, tts).process(afterWakeWord)
+            restartListening()
+        } else {
+            tts.speak("Yes boss, bataiye") {
+                listenForCommand()
+            }
         }
     }
 
     private fun listenForCommand() {
+        speechRecognizer?.destroy()
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
         val recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -96,7 +104,7 @@ class WakeWordService : Service() {
         }
 
         speechRecognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onResults(results: android.os.Bundle?) {
+            override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val command = matches?.firstOrNull()
                 if (command != null) {
@@ -104,34 +112,29 @@ class WakeWordService : Service() {
                 } else {
                     tts.speak("Samajh nahi paayi, phir se try kijiye.")
                 }
-                resumeWakeWordListening()
+                restartListening()
             }
 
             override fun onError(error: Int) {
                 tts.speak("Kuch samajh nahi aaya.")
-                resumeWakeWordListening()
+                restartListening()
             }
 
-            override fun onReadyForSpeech(params: android.os.Bundle?) {}
+            override fun onReadyForSpeech(params: Bundle?) {}
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
-            override fun onPartialResults(partialResults: android.os.Bundle?) {}
-            override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
+            override fun onPartialResults(partialResults: Bundle?) {}
+            override fun onEvent(eventType: Int, params: Bundle?) {}
         })
 
         speechRecognizer?.startListening(recognizerIntent)
     }
 
-    private fun resumeWakeWordListening() {
-        speechRecognizer?.destroy()
+    private fun restartListening() {
         updateNotification("Raksha sun rahi hai...")
-        try {
-            porcupineManager?.start()
-        } catch (e: Exception) {
-            Log.e("Raksha", "Could not resume listening: ${e.message}")
-        }
+        handler.postDelayed({ startListeningCycle() }, 300)
     }
 
     private fun createNotificationChannel() {
@@ -162,8 +165,6 @@ class WakeWordService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        porcupineManager?.stop()
-        porcupineManager?.delete()
         speechRecognizer?.destroy()
         tts.shutdown()
     }
