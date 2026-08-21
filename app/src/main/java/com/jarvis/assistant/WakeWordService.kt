@@ -65,10 +65,9 @@ class WakeWordService : Service() {
                 }
             }
 
-             override fun onError(error: Int) {
+            override fun onError(error: Int) {
                 updateNotification("Raksha sun rahi hai... [err:${errorName(error)}]")
                 restartListening()
-             }
             }
 
             override fun onReadyForSpeech(params: Bundle?) {}
@@ -144,6 +143,21 @@ class WakeWordService : Service() {
     private fun restartListening() {
         updateNotification("Raksha sun rahi hai...")
         handler.postDelayed({ startListeningCycle() }, 300)
+    }
+
+    private fun errorName(error: Int): String {
+        return when (error) {
+            SpeechRecognizer.ERROR_AUDIO -> "AUDIO"
+            SpeechRecognizer.ERROR_CLIENT -> "CLIENT"
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "NO_PERMISSION"
+            SpeechRecognizer.ERROR_NETWORK -> "NETWORK"
+            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "NETWORK_TIMEOUT"
+            SpeechRecognizer.ERROR_NO_MATCH -> "NO_MATCH"
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "BUSY"
+            SpeechRecognizer.ERROR_SERVER -> "SERVER"
+            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "TIMEOUT"
+            else -> "CODE_$error"
+        }
     }
 
     private fun createNotificationChannel() {
