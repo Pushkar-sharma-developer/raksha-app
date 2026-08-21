@@ -65,8 +65,10 @@ class WakeWordService : Service() {
                 }
             }
 
-            override fun onError(error: Int) {
+             override fun onError(error: Int) {
+                updateNotification("Raksha sun rahi hai... [err:${errorName(error)}]")
                 restartListening()
+             }
             }
 
             override fun onReadyForSpeech(params: Bundle?) {}
