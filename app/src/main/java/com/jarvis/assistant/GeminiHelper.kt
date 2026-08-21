@@ -7,7 +7,7 @@ import java.net.URL
 
 object GeminiHelper {
 
-    private const val API_KEY = "YOUR_GEMINI_API_KEY"
+     private const val API_KEY = "AQ.Ab8RN6LxcmYjNquJ3iXDNuGiKsTDV3AzjZD2Pqkgj2zFU3cZsA"
 
     private const val API_URL =
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$API_KEY"
