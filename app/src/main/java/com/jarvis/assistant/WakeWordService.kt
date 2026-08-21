@@ -108,15 +108,22 @@ class WakeWordService : Service() {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val command = matches?.firstOrNull()
                 if (command != null) {
-                    CommandProcessor(applicationContext, tts).process(command)
+                    val lower = command.lowercase()
+                    val isExit = lower.contains("bas") || lower.contains("band karo") ||
+                        lower.contains("bye") || lower.contains("thank you") || lower.contains("dhanyavaad")
+                    if (isExit) {
+                        tts.speak("Theek hai, boss.")
+                        restartListening()
+                    } else {
+                        CommandProcessor(applicationContext, tts).process(command)
+                        listenForCommand()
+                    }
                 } else {
-                    tts.speak("Samajh nahi paayi, phir se try kijiye.")
+                    restartListening()
                 }
-                restartListening()
             }
 
             override fun onError(error: Int) {
-                tts.speak("Kuch samajh nahi aaya.")
                 restartListening()
             }
 
