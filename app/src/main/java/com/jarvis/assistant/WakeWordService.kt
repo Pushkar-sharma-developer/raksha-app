@@ -27,6 +27,7 @@ class WakeWordService : Service() {
     private var speechRecognizer: SpeechRecognizer? = null
     private val handler = Handler(Looper.getMainLooper())
     private var inConversation = false
+    private var silentAttempts = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -89,10 +90,15 @@ class WakeWordService : Service() {
     private fun handleResult(heard: String) {
         if (inConversation) {
             if (heard.isEmpty()) {
-                inConversation = false
+                silentAttempts++
+                if (silentAttempts >= 2) {
+                    inConversation = false
+                    silentAttempts = 0
+                }
                 restartListening()
                 return
             }
+            silentAttempts = 0
             val isExit = heard.contains("bas") || heard.contains("band karo") ||
                 heard.contains("bye") || heard.contains("thank you") || heard.contains("dhanyavaad")
             if (isExit) {
