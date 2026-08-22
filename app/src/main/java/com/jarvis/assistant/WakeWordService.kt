@@ -60,14 +60,18 @@ class WakeWordService : Service() {
 
                 if (heard.contains(WAKE_WORD)) {
                     handleWakeWordDetected(heard)
+                } else if (heard.isNotEmpty()) {
+                    updateNotification("Suna: \"$heard\" — 'Raksha' boliye")
+                    scheduleRestart()
                 } else {
-                    restartListening()
+                    updateNotification("Raksha sun rahi hai...")
+                    scheduleRestart()
                 }
             }
 
             override fun onError(error: Int) {
                 updateNotification("Raksha sun rahi hai... [err:${errorName(error)}]")
-                restartListening()
+                scheduleRestart()
             }
 
             override fun onReadyForSpeech(params: Bundle?) {}
@@ -91,7 +95,7 @@ class WakeWordService : Service() {
             restartListening()
         } else {
             tts.speak("Yes boss, bataiye") {
-                listenForCommand()
+                handler.post { listenForCommand() }
             }
         }
     }
@@ -140,9 +144,13 @@ class WakeWordService : Service() {
         speechRecognizer?.startListening(recognizerIntent)
     }
 
+    private fun scheduleRestart(delayMs: Long = 300) {
+        handler.postDelayed({ startListeningCycle() }, delayMs)
+    }
+
     private fun restartListening() {
         updateNotification("Raksha sun rahi hai...")
-        handler.postDelayed({ startListeningCycle() }, 300)
+        scheduleRestart()
     }
 
     private fun errorName(error: Int): String {
