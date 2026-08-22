@@ -26,6 +26,7 @@ class WakeWordService : Service() {
     private lateinit var tts: TTSHelper
     private var speechRecognizer: SpeechRecognizer? = null
     private val handler = Handler(Looper.getMainLooper())
+    private var inConversation = false
 
     override fun onCreate() {
         super.onCreate()
@@ -35,100 +36,31 @@ class WakeWordService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification("Raksha sun rahi hai..."))
-        startListeningCycle()
+        setupRecognizer()
+        startListening()
         return START_STICKY
     }
 
-    private fun startListeningCycle() {
+    private fun setupRecognizer() {
+        if (speechRecognizer != null) return
+
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             updateNotification("Is phone par speech recognition available nahi hai")
             return
         }
 
-        speechRecognizer?.destroy()
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
-
-        val recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
-        }
-
         speechRecognizer?.setRecognitionListener(object : RecognitionListener {
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val heard = matches?.firstOrNull()?.lowercase() ?: ""
-
-                if (heard.contains(WAKE_WORD)) {
-                    handleWakeWordDetected(heard)
-                } else if (heard.isNotEmpty()) {
-                    updateNotification("Suna: \"$heard\" — 'Raksha' boliye")
-                    scheduleRestart()
-                } else {
-                    updateNotification("Raksha sun rahi hai...")
-                    scheduleRestart()
-                }
+                handleResult(heard)
             }
 
             override fun onError(error: Int) {
-                updateNotification("Raksha sun rahi hai... [err:${errorName(error)}]")
-                scheduleRestart()
-            }
-
-            override fun onReadyForSpeech(params: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
-            override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {}
-            override fun onPartialResults(partialResults: Bundle?) {}
-            override fun onEvent(eventType: Int, params: Bundle?) {}
-        })
-
-        speechRecognizer?.startListening(recognizerIntent)
-    }
-
-    private fun handleWakeWordDetected(heardText: String) {
-        updateNotification("Sun rahi hoon...")
-        val afterWakeWord = heardText.substringAfter(WAKE_WORD).trim()
-
-        if (afterWakeWord.isNotEmpty()) {
-            CommandProcessor(applicationContext, tts).process(afterWakeWord)
-            restartListening()
-        } else {
-            tts.speak("Yes boss, bataiye") {
-                handler.post { listenForCommand() }
-            }
-        }
-    }
-
-    private fun listenForCommand() {
-        speechRecognizer?.destroy()
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
-        val recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
-        }
-
-        speechRecognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onResults(results: Bundle?) {
-                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                val command = matches?.firstOrNull()
-                if (command != null) {
-                    val lower = command.lowercase()
-                    val isExit = lower.contains("bas") || lower.contains("band karo") ||
-                        lower.contains("bye") || lower.contains("thank you") || lower.contains("dhanyavaad")
-                    if (isExit) {
-                        tts.speak("Theek hai, boss.")
-                        restartListening()
-                    } else {
-                        CommandProcessor(applicationContext, tts).process(command)
-                        listenForCommand()
-                    }
-                } else {
-                    restartListening()
+                if (!inConversation) {
+                    updateNotification("Raksha sun rahi hai... [err:${errorName(error)}]")
                 }
-            }
-
-            override fun onError(error: Int) {
                 restartListening()
             }
 
@@ -140,17 +72,69 @@ class WakeWordService : Service() {
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
-
-        speechRecognizer?.startListening(recognizerIntent)
     }
 
-    private fun scheduleRestart(delayMs: Long = 300) {
-        handler.postDelayed({ startListeningCycle() }, delayMs)
+    private fun startListening() {
+        val recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+        }
+        try {
+            speechRecognizer?.startListening(recognizerIntent)
+        } catch (e: Exception) {
+            restartListening()
+        }
+    }
+
+    private fun handleResult(heard: String) {
+        if (inConversation) {
+            if (heard.isEmpty()) {
+                inConversation = false
+                restartListening()
+                return
+            }
+            val isExit = heard.contains("bas") || heard.contains("band karo") ||
+                heard.contains("bye") || heard.contains("thank you") || heard.contains("dhanyavaad")
+            if (isExit) {
+                inConversation = false
+                tts.speak("Theek hai, boss.")
+                restartListening()
+            } else {
+                CommandProcessor(applicationContext, tts).process(heard)
+                restartListening()
+            }
+        } else {
+            if (heard.contains(WAKE_WORD)) {
+                val afterWakeWord = heard.substringAfter(WAKE_WORD).trim()
+                if (afterWakeWord.isNotEmpty()) {
+                    inConversation = true
+                    CommandProcessor(applicationContext, tts).process(afterWakeWord)
+                    restartListening()
+                } else {
+                    updateNotification("Sun rahi hoon...")
+                    tts.speak("Yes boss, bataiye") {
+                        handler.post {
+                            inConversation = true
+                            restartListening()
+                        }
+                    }
+                }
+            } else {
+                if (heard.isNotEmpty()) {
+                    updateNotification("Suna: \"$heard\" — 'Raksha' boliye")
+                } else {
+                    updateNotification("Raksha sun rahi hai...")
+                }
+                restartListening()
+            }
+        }
     }
 
     private fun restartListening() {
-        updateNotification("Raksha sun rahi hai...")
-        scheduleRestart()
+        if (!inConversation) {
+            updateNotification("Raksha sun rahi hai...")
+        }
+        handler.postDelayed({ startListening() }, 300)
     }
 
     private fun errorName(error: Int): String {
