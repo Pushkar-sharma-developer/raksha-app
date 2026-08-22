@@ -2,6 +2,22 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Apps Raksha needs to be able to see and launch by name -->
+    <queries>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.instagram.android" />
+        <package android:name="com.facebook.katana" />
+        <package android:name="com.android.chrome" />
+        <package android:name="com.android.camera" />
+        <package android:name="com.google.android.apps.photos" />
+        <package android:name="com.google.android.gm" />
+        <package android:name="com.google.android.apps.maps" />
+        <package android:name="com.android.vending" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="com.spotify.music" />
+    </queries>
+
     <!-- Mic for wake-word + commands -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Internet for browser/downloads -->
@@ -21,9 +37,11 @@
         android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
-     <!-- Calling and messaging contacts -->
+    <!-- Calling and messaging contacts -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!-- Don't let Android kill Raksha to save battery -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
